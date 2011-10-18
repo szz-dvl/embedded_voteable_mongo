@@ -9,12 +9,32 @@ module Mongo
           klass = class_name.constantize
           klass_voteable = voteable[class_name]
           puts "Init stats for #{class_name}" if log
-          klass.collection.update({:votes => nil}, {
-            '$set' => { :votes => DEFAULT_VOTES }
-          }, {
-            :safe => true,
-            :multi => true
-          })
+          if klass.respond_to?(:embedded?) && klass.embedded?
+            parent_klass = klass.voteable_parent_class
+            if parent_klass
+              parent_klass.collection.find().each do |p|
+                embedded_name = klass.voteable_embedded_collection_name
+                p.send(embedded_name.to_sym).each do |instance|
+                  if instance.votes.nil?
+                    parent_klass.collection.update({"_id"=>p.id, 
+                      "#{embedded_name}._id"=>instance.id},
+                      {"$set" => { "#{embedded_name}.$.votes" => DEFAULT_VOTES}},
+                      {
+                        :safe=>true,
+                        :multi=>true
+                      })                    
+                  end
+                end
+              end
+            end
+          else
+            klass.collection.update({:votes => nil}, {
+              '$set' => { :votes => DEFAULT_VOTES }
+            }, {
+              :safe => true,
+              :multi => true
+            })            
+          end
         end
       end
       
@@ -35,6 +55,13 @@ module Mongo
       end
 
       def self.migrate_old_votes_for(klass, voteable)
+        
+        if klass.respond_to?(:embedded?) && klass.embedded?
+          # not supported for embedded classes, which also weren't supported when
+          # the old schema was valid  
+          return
+        end
+        
         klass.all.each do |doc|
           # Version 0.6.x use very short field names (u, d, uc, dc, c, p) to minimize 
           # votes storage but it's not human friendly
@@ -79,9 +106,23 @@ module Mongo
           klass = class_name.constantize
           klass_voteable = voteable[class_name]
           puts "Generating stats for #{class_name}" if log
-          klass.all.each{ |doc|
-            remake_stats_for(doc, klass_voteable)
-          }
+          
+          if klass.respond_to?(:embedded?) && klass.embedded?
+            parent_klass = klass.voteable_parent_class
+            if parent_klass
+              parent_klass.all.each { |parent_doc|
+                embedded_collection = klass.voteable_embedded_collection_name
+                parent_doc.send(embedded_collection.to_sym).each do |doc|
+                  remake_stats_for(doc, klass_voteable)
+                end
+              }
+            end
+          else
+            klass.all.each{ |doc|
+              remake_stats_for(doc, klass_voteable)
+            }          
+          end
+          
         end
       end
 
@@ -89,8 +130,9 @@ module Mongo
       def self.remake_stats_for(doc, voteable)
         up_count = doc.up_voter_ids.length
         down_count = doc.down_voter_ids.length
+        
         doc.update_attributes(
-          'votes' => {
+          "votes" => {
             'up' => doc.up_voter_ids,
             'down' => doc.down_voter_ids,
             'up_count' => up_count,

@@ -45,10 +45,27 @@ describe Mongo::Voteable do
     
     @user1 = User.create!
     @user2 = User.create!
+    
+    if Class.const_defined?("Mongoid")
+
+      @question1 = Question.create!(:question => 'How warm is the sun on Sunday?')
+      @question2 = Question.create!(:question => 'How wet is the rain on Friday?')
+
+      answer1 = @question1.answers.create!(:position=>1, :answer=>"It's very warm. Like a bazillion degrees.")
+      answer2 = @question1.answers.create!(:position=>2, :answer=>"Pfff. It's a cool star, astrophysically speaking. I'll show you a hot star. Look at this: http://en.wikipedia.org/wiki/R136a1")
+      answer3 = @question2.answers.create!(:position=>1, :answer=>"Very, very wet.")
+      answer4 = @question2.answers.create!(:position=>2, :answer=>"Less wet than it is on Saturday.")
+      
+    end
+    
+    
   end
   
   it "vote for unexisting post" do
     @user1.vote(:votee_class => Post, :votee_id => BSON::ObjectId.new, :value => :up).should == false
+    if Class.const_defined?("Mongoid")
+      @user2.vote(:votee_class => Answer, :votee_id => BSON::ObjectId.new, :value => :down, :parent_doc_id => @question1.id).should == false
+    end
   end
   
   context "just created" do
@@ -398,7 +415,7 @@ describe Mongo::Voteable do
       @post2.reload
     end
     
-    it "" do      
+    it "validates" do      
       @comment.up_votes_count.should == 0
       @comment.down_votes_count.should == 0
       @comment.votes_count.should == 0
@@ -408,6 +425,362 @@ describe Mongo::Voteable do
       @post2.down_votes_count.should == 0
       @post2.votes_count.should == 1
       @post2.votes_point.should == 1      
+    end
+  end
+  
+  if Class.const_defined?("Mongoid")
+ 
+    context "just created embedded models" do
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+      
+      it 'votes_count, up_votes_count, down_votes_count, votes_point should be zero' do
+        @question1.up_votes_count.should == 0
+        @question1.down_votes_count.should == 0
+        @question1.votes_count.should == 0
+        @question1.votes_point.should == 0
+
+        @question2.up_votes_count.should == 0
+        @question2.down_votes_count.should == 0
+        @question2.votes_count.should == 0
+        @question2.votes_point.should == 0
+
+
+        @answer1.up_votes_count.should == 0
+        @answer1.down_votes_count.should == 0
+        @answer1.votes_count.should == 0
+        @answer1.votes_point.should == 0
+
+        @answer2.up_votes_count.should == 0
+        @answer2.down_votes_count.should == 0
+        @answer2.votes_count.should == 0
+        @answer2.votes_point.should == 0
+
+        @answer3.up_votes_count.should == 0
+        @answer3.down_votes_count.should == 0
+        @answer3.votes_count.should == 0
+        @answer3.votes_point.should == 0
+
+        @answer4.up_votes_count.should == 0
+        @answer4.down_votes_count.should == 0
+        @answer4.votes_count.should == 0
+        @answer4.votes_point.should == 0
+
+      end
+
+      it 'up_voter_ids, down_voter_ids should be empty' do
+        @question1.up_voter_ids.should be_empty
+        @question1.down_voter_ids.should be_empty
+
+        @question2.up_voter_ids.should be_empty
+        @question2.down_voter_ids.should be_empty
+
+        @answer1.up_voter_ids.should be_empty
+        @answer1.down_voter_ids.should be_empty
+
+        @answer2.up_voter_ids.should be_empty
+        @answer2.down_voter_ids.should be_empty
+
+        @answer3.up_voter_ids.should be_empty
+        @answer3.down_voter_ids.should be_empty
+
+        @answer4.up_voter_ids.should be_empty
+        @answer4.down_voter_ids.should be_empty
+      end
+
+      it 'voted by voter should be empty' do
+        Question.voted_by(@user1).should be_empty
+        Question.voted_by(@user2).should be_empty
+
+        Answer.voted_by(@user1).should be_empty
+        Answer.voted_by(@user2).should be_empty
+
+      end
+
+      it 'revote answer1 has no effect' do
+        @answer1.vote(:revote => true, :voter => @user1, :value => 'up')
+
+        @answer1.up_votes_count.should == 0
+        @answer1.down_votes_count.should == 0
+        @answer1.votes_count.should == 0
+        @answer1.votes_point.should == 0
+      end
+
+      it 'revote answer2 has no effect' do
+        Answer.vote(:revote => true, :votee_id => @answer2.id, :voter_id => @user2.id, :value => :down, :parent_doc_id=>@question1.id)
+        @question1.reload
+        @answer2 = @question1.answers.detect { |a| a.position == 2 }
+
+        @answer2.up_votes_count.should == 0
+        @answer2.down_votes_count.should == 0
+        @answer2.votes_count.should == 0
+        @answer2.votes_point.should == 0
+      end
+    end
+
+    context 'user1 vote up answer1 the first time' do
+      before :all do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        @answer = @answer1.vote(:voter_id => @user1.id, :value => :up)
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'validates return answer' do
+        @answer.should be_is_a Answer
+        @answer.should_not be_new_record
+
+        @answer.votes.should == {
+          'up' => [@user1.id],
+          'down' => [],
+          'up_count' => 1,
+          'down_count' => 0,
+          'count' => 1,
+          'point' => 1
+        }
+      end
+
+      it 'validates' do
+        @answer1.up_votes_count.should == 1
+        @answer1.down_votes_count.should == 0
+        @answer1.votes_count.should == 1
+        @answer1.votes_point.should == 1
+
+        @answer1.vote_value(@user1).should == :up
+        @answer1.should be_voted_by(@user1)
+        @answer1.vote_value(@user2.id).should be_nil
+        @answer1.should_not be_voted_by(@user2.id)
+
+        @answer1.up_voters(User).to_a.should == [ @user1 ]
+        @answer1.voters(User).to_a.should == [ @user1 ]
+        @answer1.down_voters(User).should be_empty
+
+        Answer.voted_by(@user1).to_a.should == [ @question1 ]
+        Answer.voted_by(@user2).to_a.should be_empty
+
+      end
+
+      it 'user1 vote answer1 has no effect' do
+        Answer.vote(:revote => false, :votee_id => @answer1.id, :voter_id => @user1.id, :value => :up, :parent_doc_id => @question1.id)
+        @question1.reload
+        @answer1 = @question1.answers.detect { |a| a.position == 1 }
+
+        @answer1.up_votes_count.should == 1
+        @answer1.down_votes_count.should == 0
+        @answer1.votes_count.should == 1
+        @answer1.votes_point.should == 1
+
+        @answer1.vote_value(@user1.id).should == :up
+      end
+    end
+
+    context 'user2 vote down answer1 the first time' do
+      before :all do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        Answer.vote(:votee_id => @answer1.id, :voter_id => @user2.id, :value => :down, :parent_doc_id => @question1.id)
+        @question1.reload
+        # @answer1 = @question1.answers.detect { |a| a.position == 1 }
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'answer1 up_votes_count is the same' do
+        @answer1.up_votes_count.should == 1
+      end
+
+      it 'answer1 vote_value on user1 is the same' do
+        @answer1.vote_value(@user1.id).should == :up
+      end
+
+      it 'down_votes_count, votes_count, and votes_point changed' do
+        @answer1.down_votes_count.should == 1
+        @answer1.votes_count.should == 2
+        @answer1.votes_point.should == 0
+        @answer1.vote_value(@user2.id).should == :down
+      end
+
+      it 'answer1 get voters' do
+        @answer1.up_voters(User).to_a.should == [ @user1 ]
+        @answer1.down_voters(User).to_a.should == [ @user2 ]
+        @answer1.voters(User).to_a.should == [ @user1, @user2 ]
+      end
+
+      it 'answers voted_by user1, user2 is answer1 only' do
+        Answer.voted_by(@user1).to_a.should == [ @question1 ]
+        Answer.voted_by(@user2).to_a.should == [ @question1 ]
+      end
+
+    end
+
+    context 'user1 change vote on answer1 from up to down' do
+      before :all do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        Answer.vote(:revote => true, :votee_id => @answer1.id, :voter_id => @user1.id, :value => :down, :parent_doc_id => @question1.id)
+        Mongo::Voteable::Tasks.remake_stats
+        @question1.reload
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'validates' do
+        @answer1.up_votes_count.should == 0
+        @answer1.down_votes_count.should == 2
+        @answer1.votes_count.should == 2
+        @answer1.votes_point.should == -2
+
+        @answer1.vote_value(@user1.id).should == :down
+        @answer1.vote_value(@user2.id).should == :down
+
+        Answer.voted_by(@user1).to_a.should == [ @question1 ]
+        Answer.voted_by(@user2).to_a.should == [ @question1 ]
+      end
+    end
+
+    context 'user1 vote down answer3 the first time' do
+      before :all do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        @answer3.vote(:voter_id => @user1.id, :value => :down)
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'validates' do
+        @answer3.up_votes_count.should == 0
+        @answer3.down_votes_count.should == 1
+        @answer3.votes_count.should == 1
+        @answer3.votes_point.should == -1
+
+        @answer3.vote_value(@user1.id).should == :down
+        @answer3.vote_value(@user2.id).should be_nil
+
+        Answer.voted_by(@user1).to_a.should == [ @question1, @question2 ]
+      end
+    end
+
+    context 'user1 change vote on answer3 from down to up' do
+      before :all do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        Answer.vote(:revote => true, :votee_id => @answer3.id.to_s, :voter_id => @user1.id.to_s, :value => :up, :parent_doc_id => @question2.id )
+        Mongo::Voteable::Tasks.remake_stats
+        @question2.reload        
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'validates' do
+        @answer3.up_votes_count.should == 1
+        @answer3.down_votes_count.should == 0
+        @answer3.votes_count.should == 1
+        @answer3.votes_point.should == 1
+
+        @answer3.vote_value(@user1.id).should == :up
+        @answer3.vote_value(@user2.id).should be_nil
+
+        Answer.voted_by(@user1).size.should == 2
+        Answer.voted_by(@user1).should be_include @question1
+        Answer.voted_by(@user1).should be_include @question2
+      end
+    end
+
+    context "user1 unvote on answer1" do
+      before(:all) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+        @answer1.vote(:voter_id => @user1.id, :votee_id => @answer1.id, :unvote => true, :parent_doc_id => @question1.id )
+        Mongo::Voteable::Tasks.remake_stats
+        @question1.reload
+      end
+      
+      before(:each) do
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+
+      it 'validates' do
+        @answer1.up_votes_count.should == 0
+        @answer1.down_votes_count.should == 1
+        @answer1.votes_count.should == 1
+        @answer1.votes_point.should == -1
+
+        @answer1.vote_value(@user1.id).should be_nil
+        @answer1.vote_value(@user2.id).should == :down
+
+        Answer.voted_by(@user1).to_a.should_not include(@answer1)
+      end
+    end
+
+    context "@answer1 has 1 down vote and -1 point, @answer3 has 1 up vote, 1 down vote and 0 point" do
+      before(:each) do
+        @question1.reload
+        @question2.reload
+        @answer1 = @question1.answers[0]
+        @answer2 = @question1.answers[1]
+        @answer3 = @question2.answers[0]
+        @answer4 = @question2.answers[1]
+      end
+      
+      it "verify @answer1 counters" do
+        @answer1.up_votes_count.should == 0
+        @answer1.down_votes_count.should == 1
+        @answer1.votes_count.should == 1
+        @answer1.votes_point.should == -1
+      end
+
+      it "verify @answer3 counters" do
+        @answer3.up_votes_count.should == 1
+        @answer3.down_votes_count.should == 0
+        @answer3.votes_count.should == 1
+        @answer3.votes_point.should == 1
+      end    
     end
   end
   

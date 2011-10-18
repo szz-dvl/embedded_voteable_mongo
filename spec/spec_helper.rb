@@ -3,7 +3,7 @@ require 'bundler'
 Bundler.setup
 
 # TODO: Need better solution
-if rand > 0.5
+if true #rand > 0.5
   puts 'Mongoid'
   require 'mongoid'
   models_folder = File.join(File.dirname(__FILE__), 'mongoid/models')
@@ -30,8 +30,14 @@ require 'rspec'
 require 'rspec/autorun'
 
 Dir[ File.join(models_folder, '*.rb') ].each { |file|
+  puts file
   require file
   file_name = File.basename(file).sub('.rb', '')
   klass = file_name.classify.constantize
-  klass.collection.drop
+  if klass.respond_to?("embedded?") && klass.embedded?
+    metadata = klass.relations.find{ |x,r| r.relation == Mongoid::Relations::Embedded::In}.try(:last)
+    metadata.class_name.constantize.collection.drop unless metadata.nil?
+  else
+    klass.collection.drop
+  end
 }

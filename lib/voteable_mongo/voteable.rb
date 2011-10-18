@@ -1,6 +1,9 @@
 require 'voteable_mongo/voting'
+require 'voteable_mongo/embedded_voting'
 require 'voteable_mongo/integrations/mongoid'
 require 'voteable_mongo/integrations/mongo_mapper'
+require 'voteable_mongo/extensions/scopes'
+require 'voteable_mongo/extensions/embedded_scopes'
 
 module Mongo
   module Voteable
@@ -16,28 +19,15 @@ module Mongo
     }
 
     included do
-      include Mongo::Voteable::Voting
 
       if defined?(Mongoid) && defined?(field)
+        include Mongo::Voteable::Voting
         include Mongo::Voteable::Integrations::Mongoid
       elsif defined?(MongoMapper)
+        include Mongo::Voteable::Voting
         include Mongo::Voteable::Integrations::MongoMapper
       end
       
-      scope :voted_by, lambda { |voter|
-        voter_id = Helpers.get_mongo_id(voter)
-        where('$or' => [{ 'votes.up' => voter_id }, { 'votes.down' => voter_id }])
-      }
-
-      scope :up_voted_by, lambda { |voter|
-        voter_id = Helpers.get_mongo_id(voter)
-        where('votes.up' => voter_id)
-      }
-
-      scope :down_voted_by, lambda { |voter|
-        voter_id = Helpers.get_mongo_id(voter)
-        where('votes.down' => voter_id)
-      }
     end
 
     # How many points should be assigned for each up or down vote and other options
@@ -54,6 +44,14 @@ module Mongo
       def voteable(klass = self, options = nil)
         VOTEABLE[name] ||= {}
         VOTEABLE[name][klass.name] ||= options
+        
+        if self.embedded?
+          include Mongo::Voteable::EmbeddedVoting
+          include Mongo::Voteable::Extensions::EmbeddedScopes
+        else
+          include Mongo::Voteable::Extensions::Scopes
+        end
+        
         if klass == self
           if options[:index] == true
             create_voteable_indexes
@@ -128,7 +126,10 @@ module Mongo
         options[:votee_id] = id
         options[:votee] = self
         options[:voter_id] ||= options[:voter].id
-
+        if (self.respond_to?(:embedded?) && self.embedded?)
+          options[:parent_doc_id] = self._root.id # TODO: seems hackish... is this the right way?
+        end
+        
         if options[:unvote]
           options[:value] ||= vote_value(options[:voter_id])
         else
