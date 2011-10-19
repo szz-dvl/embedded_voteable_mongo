@@ -3,7 +3,7 @@ require 'bundler'
 Bundler.setup
 
 # TODO: Need better solution
-if true #rand > 0.5
+if rand > 0.5
   puts 'Mongoid'
   require 'mongoid'
   models_folder = File.join(File.dirname(__FILE__), 'mongoid/models')
