@@ -45,7 +45,7 @@ module Mongo
         VOTEABLE[name] ||= {}
         VOTEABLE[name][klass.name] ||= options
         
-        if self.embedded?
+        if self.respond_to?(:embedded) && self.embedded?
           include Mongo::Voteable::EmbeddedVoting
           include Mongo::Voteable::Extensions::EmbeddedScopes
         else
