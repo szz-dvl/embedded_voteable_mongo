@@ -1,3 +1,5 @@
+szz: This is a clone of the project voteable mongo from: https://github.com/vinova/voteable_mongo, however a little bit of code was added to support votes on embedded collections up to n-level of embedding (making use of Mongo DB metadata). Collections holding embedded collections needs to define "accepts_nested_attributes_for" for the embedded collection accepting votes, besides this everything must work as expected following the next instructions.
+
 = Voteable Mongo
 
 voteable_mongo allows you to make your Mongoid::Document or MongoMapper::Document objects voteable and tabulate votes count and votes point for you. For instance, in a forum, a user can vote up (or down) on a post or a comment. It's optimized for speed by using only ONE database request per collection to validate, update, and retrieve updated data.

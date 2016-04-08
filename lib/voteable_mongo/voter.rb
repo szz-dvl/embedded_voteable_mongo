@@ -12,10 +12,12 @@ module Mongo
     #
     # @param [Hash, Object] options the hash containing the votee, or the votee itself
     # @return [true, false] true if voted, false otherwise
-    def voted?(options)
+    def voted?(options) #Object needed!
+ 
       unless options.is_a?(Hash)
         votee_class = options.class
         votee_id = options.id
+        votee = options
       else
         votee = options[:votee]
         if votee
@@ -25,24 +27,9 @@ module Mongo
           votee_class = options[:votee_class]
           votee_id = options[:votee_id]
         end
-      
-        if votee_class.respond_to?(:embedded?) && votee_class.embedded?
-          parent_doc_id = nil
-          unless options.is_a?(Hash)
-            # we were passed the object directly
-            parent_doc_id = options._root.id
-          else
-            # we were passed an options hash
-            parent_doc_id = options[:parent_doc_id]
-          end
-          votee_class.voted?(:voter_id => id, :votee_id => votee_id, :parent_doc_id => parent_doc_id)
-        else
-          votee_class.voted?(:voter_id => id, :votee_id => votee_id)
-        end
-      
       end
-
-      votee_class.voted?(:voter_id => id, :votee_id => votee_id)
+      return votee.voted_by?(self.id)
+     
     end
 
     # Get the voted value on a votee
@@ -72,24 +59,23 @@ module Mongo
 
     # Vote on a votee
     #
-    # @param (see #voted?)
+    # @param (see #voted?) # votee needed!
     # @param [:up, :down] vote_value vote up or vote down, nil to unvote
     def vote(options, value = nil)
+
       if options.is_a?(Hash)
         votee = options[:votee]
       else
         votee = options
-        options = { :votee => votee, :value => value }
+        options = {}
+        options[:votee] = votee
+        options[:value] = value 
       end
 
       if votee
         options[:votee_id] = votee.id
         votee_class = votee.class            
-        if options[:parent_doc_id].nil?
-          if (votee_class.respond_to?(:embedded?) && votee_class.embedded?)
-            options[:parent_doc_id] = votee._root.id
-          end
-        end
+        
       else
         votee_class = options[:votee_class]
       end
@@ -98,13 +84,15 @@ module Mongo
         options[:unvote] = true
         options[:value] = vote_value(options)
       else
-        options[:revote] = options.has_key?(:revote) ? !options[:revote].blank? : voted?(options)
+        
+        options[:revote] = options.has_key?(:revote) ? !options[:revote].blank? : voted?(votee)
+
       end
     
       options[:voter] = self
       options[:voter_id] = id
 
-      (votee || votee_class).vote(options)
+      (votee || votee_class).vote(options, options[:value])
     end
 
   end

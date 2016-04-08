@@ -21,9 +21,11 @@ module Mongo
           def voteable_collection
             if self.embedded?
               metadata = relations.find{ |x,r| r.relation.to_s == "Mongoid::Relations::Embedded::In"}.try(:last)
-              metadata.class_name.constantize.collection.master.collection unless metadata.nil?
+              metadata.class_name.constantize.collection unless metadata.nil?
+              # metadata.class_name.constantize.collection.master.collection unless metadata.nil? //SANTI
             else 
-              collection.master.collection
+              #collection.master.collection //SANTI
+              collection
             end
           end
 

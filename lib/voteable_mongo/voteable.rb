@@ -45,7 +45,7 @@ module Mongo
         VOTEABLE[name] ||= {}
         VOTEABLE[name][klass.name] ||= options
         
-        if self.respond_to?(:embedded) && self.embedded?
+        if self.embedded?
           include Mongo::Voteable::EmbeddedVoting
           include Mongo::Voteable::Extensions::EmbeddedScopes
         else
@@ -68,11 +68,13 @@ module Mongo
       #   - :voter_id: the voter document id
       # 
       # @return [true, false]
-      def voted?(options)
+      def voted?(options) #historic
         validate_and_normalize_vote_options(options)
-        up_voted?(options) || down_voted?(options)
+        subcollection_prefix = self.voteable_embedded_collection_name
+        voted_by(options[:voter_id]).where( subcollection_prefix.to_sym.elem_match => { :id => options[:votee_id] }).exists?
+
       end
-      
+       
       # Check if voter_id do an up vote on votee_id
       #
       # @param [Hash] options a hash containings:
@@ -80,9 +82,10 @@ module Mongo
       #   - :voter_id: the voter document id
       # 
       # @return [true, false]
-      def up_voted?(options)
-        validate_and_normalize_vote_options(options)
-        up_voted_by(options[:voter_id]).where(:_id => options[:votee_id]).count == 1
+      def up_voted?(options) #historic
+        validate_and_normalize_vote_options(options)        
+        subcollection_prefix = self.voteable_embedded_collection_name
+        up_voted_by(options[:voter_id]).where(subcollection_prefix.to_sym.elem_match => { :id => options[:votee_id] }).exists?
       end
       
       # Check if voter_id do a down vote on votee_id
@@ -92,9 +95,10 @@ module Mongo
       #   - :voter_id: the voter document id
       # 
       # @return [true, false]
-      def down_voted?(options)
+      def down_voted?(options) #historic
         validate_and_normalize_vote_options(options)
-        down_voted_by(options[:voter_id]).where(:_id => options[:votee_id]).count == 1
+        subcollection_prefix = self.voteable_embedded_collection_name
+        down_voted_by(options[:voter_id]).where(subcollection_prefix.to_sym.elem_match => { :id => options[:votee_id] }).exists?
       end
 
       def create_voteable_indexes
@@ -103,14 +107,15 @@ module Mongo
         # Should run in background since it introduce new index value and
         # while waiting to build, the system can use _id for voting
         # http://www.mongodb.org/display/DOCS/Indexing+as+a+Background+Operation
-        voteable_index [['votes.up', 1], ['_id', 1]], :unique => true
-        voteable_index [['votes.down', 1], ['_id', 1]], :unique => true
+
+        voteable_index [{ 'votes.up' => 1, '_id' => 1 }, {:unique => true}]
+        voteable_index [{'votes.down' => 1, '_id' => 1 }, {:unique => true}]
 
         # Index counters and point for desc ordering
-        voteable_index [['votes.up_count', -1]]
-        voteable_index [['votes.down_count', -1]]
-        voteable_index [['votes.count', -1]]
-        voteable_index [['votes.point', -1]]
+        voteable_index [{'votes.up_count' => -1}]
+        voteable_index [{'votes.down_count' => -1}]
+        voteable_index [{'votes.count' => -1}]
+        voteable_index [{'votes.point' => -1 }]
       end
     end
     
@@ -121,29 +126,56 @@ module Mongo
     #   - :value: vote :up or vote :down
     #   - :revote: change from vote up to vote down
     #   - :unvote: unvote the vote value (:up or :down)
-    def vote(options)
-      options[:votee_id] = id
-      options[:votee] = self
-      options[:voter_id] ||= options[:voter].id
-      if (self.respond_to?(:embedded?) && self.embedded?)
-        options[:parent_doc_id] = self._root.id # TODO: seems hackish... is this the right way?
-      end
+    def vote(options, value = nil)
+        
+      opt_new = {}
+      unless options.is_a?(Hash)
+
+        if ! options.is_a?(Mongo::Voter)
+          opt_new[:voter] = nil
+          if options.is_a?(BSON::ObjectId)
+            opt_new[:voter_id] = options
+          elsif options.is_a?(String)
+            opt_new[:voter_id] = Helpers.try_to_convert_string_to_object_id(options)
+          else
+            raise '"'+ options.class.to_s + '" is not a voter.'
+          end
+        else
+          opt_new[:voter_id] = options.id
+          opt_new[:voter] = options
+        end
+        
+        opt_new[:unvote] = value.nil? ? true : false
+        opt_new[:revote] = value.nil? ? false : vote_value(opt_new[:voter_id]).present?
+        opt_new[:value] = value.nil? ? vote_value(opt_new[:voter_id]) : value
       
-      if options[:unvote]
-        options[:value] ||= vote_value(options[:voter_id])
       else
-        options[:revote] ||= vote_value(options[:voter_id]).present?
+      
+        opt_new[:voter_id] = options[:voter_id].nil? ? options[:voter].id : options[:voter_id]
+            
+        opt_new[:value] = options[:unvote].nil? ? value.nil? ? options[:value] : value : options[:value]
+        if options[:unvote]
+          opt_new[:value] = options[:value].nil? ? vote_value(options[:voter_id]) : options[:value]
+          opt_new [:unvote] = true
+        else
+          opt_new[:revote] = options[:revote].nil? ? vote_value(options[:voter_id]).present? : options[:revote]
+        end
+
+        
       end
-
-
-      self.class.vote(options)
+      opt_new[:votee_id] = self.id
+      opt_new[:votee] = self
+      
+      self.class.vote(opt_new)
     end
 
     # Get a voted value on this votee
     #
     # @param voter is object or the id of the voter who made the vote
     def vote_value(voter)
-      voter_id = Helpers.get_mongo_id(voter)
+      
+      voter_id = voter.is_a?(String) ? Helpers.try_to_convert_string_to_object_id(voter) : voter_id = Helpers.get_mongo_id(voter) #.to_s
+       
       return :up if up_voter_ids.include?(voter_id)
       return :down if down_voter_ids.include?(voter_id)
     end
@@ -154,12 +186,12 @@ module Mongo
 
     # Array of up voter ids
     def up_voter_ids
-      votes.try(:[], 'up') || []
+      votes[:up].nil? ? [] : votes[:up]
     end
 
     # Array of down voter ids
     def down_voter_ids
-      votes.try(:[], 'down') || []
+      votes[:down].nil? ? [] : votes[:down]
     end
 
     # Array of voter ids
